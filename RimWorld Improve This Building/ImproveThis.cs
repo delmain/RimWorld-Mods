@@ -1,6 +1,7 @@
 ﻿using HarmonyLib;
 using RimWorld;
 using System.Collections.Generic;
+using System.Linq;
 using Verse;
 using Verse.AI;
 
@@ -333,7 +334,7 @@ namespace RimWorld___Improve_This {
                         }
                     }
                 }
-                JobFailReason.Is($"{"MissingMaterials".Translate()}: {mats[0].thingDef.label}");
+                JobFailReason.Is($"{"MissingMaterials".Translate(mats.Join((item) => item.count + "x " + item.thingDef.label))}");
                 return null;
             }
             // needs work done
