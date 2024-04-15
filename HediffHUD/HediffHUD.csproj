@@ -38,6 +38,9 @@
         <Reference Include="Assembly-CSharp">
           <HintPath>/games/SteamLibrary/steamapps/common/RimWorld/RimWorldLinux_Data/Managed/Assembly-CSharp.dll</HintPath>
         </Reference>
+        <Reference Include="Unity-Core">
+          <HintPath>/games/SteamLibrary/steamapps/common/RimWorld/RimWorldLinux_Data/Managed/UnityEngine.CoreModule.dll</HintPath>
+        </Reference>
         <Reference Include="System" />
         <Reference Include="System.Core" />
         <Reference Include="System.Data" />
