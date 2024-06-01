@@ -314,15 +314,14 @@ namespace RimWorld___Improve_This {
         }
 
         public override Job JobOnThing(Pawn pawn, Thing t, bool forced = false) {
-            ImproveThisComp c = t.TryGetComp<ImproveThisComp>();
+            var c = t.TryGetComp<ImproveThisComp>();
             if (c == null || !c.improveRequested) return null;
-            List<ThingDefCountClass> mats = c.MaterialsNeeded().FindAll(
-                m => m.count > 0
-            );
+
+            var mats = c.TotalMaterialCost().FindAll(m => m.count > 0);
             if (mats.Count > 0) {
                 // needs more materials
-                foreach (ThingDefCountClass mat in mats) {
-                    if (pawn.Map.itemAvailability.ThingsAvailableAnywhere(mat, pawn)) {
+                foreach (var mat in mats) {
+                    if (pawn.Map.itemAvailability.ThingsAvailableAnywhere(mat.thingDef, mat.count, pawn)) {
                         Thing found = GenClosest.ClosestThingReachable(pawn.Position, pawn.Map, ThingRequest.ForDef(mat.thingDef), PathEndMode.ClosestTouch, TraverseParms.For(pawn), 9999f, (Thing r) => ResourceValidator(pawn, mat, r));
                         if (found != null) {
                             Job job = JobMaker.MakeJob(ImproveThisHaulJobDef);
@@ -330,7 +329,8 @@ namespace RimWorld___Improve_This {
                             job.targetB = t;
                             job.count = mat.count;
                             job.haulMode = HaulMode.ToContainer;
-                            if (pawn.HasReserved(job.targetB) || pawn.CanReserve(job.targetB, ignoreOtherReservations: forced)) return job;
+                            if (pawn.HasReserved(job.targetB) || pawn.CanReserve(job.targetB, ignoreOtherReservations: forced)) 
+                                return job;
                         }
                     }
                 }
@@ -439,9 +439,10 @@ namespace RimWorld___Improve_This {
                     Log.Error("Could not deposit hauled thing in container: " + curJob.GetTarget(containerInd).Thing);
                     return;
                 }
-                int num = actor.carryTracker.CarriedThing.stackCount;
-                num = UnityEngine.Mathf.Min(GenConstruct.AmountNeededByOf((IConstructible)comp, actor.carryTracker.CarriedThing.def), num);
-                actor.carryTracker.innerContainer.TryTransferToContainer(actor.carryTracker.CarriedThing, thingOwner, num);
+                var carrying = actor.carryTracker.CarriedThing.stackCount;
+                var remaining = comp.ThingCountNeeded(actor.carryTracker.CarriedThing.def);
+                var deliver = UnityEngine.Mathf.Min(carrying, remaining);
+                actor.carryTracker.innerContainer.TryTransferToContainer(actor.carryTracker.CarriedThing, thingOwner, deliver);
             };
             return toil;
         }
@@ -527,7 +528,7 @@ namespace RimWorld___Improve_This {
         {
             if (!OVERRIDE) {
                 if (!ImproveComp.improveRequested) return 0;
-                ThingDefCountClass tdcc = ImproveComp.MaterialsNeeded().Find(tdc => tdc.thingDef == item.def);
+                ThingDefCountClass tdcc = ImproveComp.TotalMaterialCost().Find(tdc => tdc.thingDef == item.def);
                 if (tdcc == null) return 0;
                 return tdcc.count;
             }
@@ -562,20 +563,31 @@ namespace RimWorld___Improve_This {
             return parent.Stuff;
         }
 
-        private List<ThingDefCountClass> cachedMaterialsNeeded = new List<ThingDefCountClass>();
-        public List<ThingDefCountClass> MaterialsNeeded() {
+        // Only used by Frames, as long as this IConstructible isn't accidentally applied to a frame, just returning false is fine.
+        public bool IsCompleted() => false;
+
+        private readonly List<ThingDefCountClass> cachedMaterialsNeeded = new List<ThingDefCountClass>();
+        public List<ThingDefCountClass> TotalMaterialCost() {
             cachedMaterialsNeeded.Clear();
-            float returned = parent.def.resourcesFractionWhenDeconstructed;
-            List<ThingDefCountClass> list = parent.def.CostListAdjusted(parent.Stuff, false);
-            for (int i = 0; i < list.Count; i++)
+            var returnedFraction = parent.def.resourcesFractionWhenDeconstructed;
+            var buildRequirements = parent.def.CostListAdjusted(parent.Stuff, false);
+            foreach (var buildRequirementThing in buildRequirements)
             {
-                ThingDefCountClass thingDefCountClass = list[i];
-                int req = thingDefCountClass.count - (int)(thingDefCountClass.count * returned);
-                int num = GetDirectlyHeldThings().TotalStackCountOfDef(thingDefCountClass.thingDef);
-                int num2 = req - num;
-                if (num2 > 0) cachedMaterialsNeeded.Add(new ThingDefCountClass(thingDefCountClass.thingDef, num2));
+                var required = buildRequirementThing.count - (int)(buildRequirementThing.count * returnedFraction);
+                var current = GetDirectlyHeldThings().TotalStackCountOfDef(buildRequirementThing.thingDef);
+                var missing = required - current;
+                if (missing > 0) 
+                    cachedMaterialsNeeded.Add(new ThingDefCountClass(buildRequirementThing.thingDef, missing));
             }
             return cachedMaterialsNeeded;
+        }
+
+        public int ThingCountNeeded(ThingDef stuff)
+        {
+            foreach (var thingNeeded in cachedMaterialsNeeded)
+                if (thingNeeded.thingDef == stuff)
+                    return thingNeeded.count - GetDirectlyHeldThings().TotalStackCountOfDef(thingNeeded.thingDef);
+            return 0;
         }
 
         // useful numbers
@@ -616,7 +628,7 @@ namespace RimWorld___Improve_This {
 
             str.Append("ContainedResources".Translate() + ":");
             List<ThingDefCountClass> list = parent.def.CostListAdjusted(parent.Stuff, false);
-            List<ThingDefCountClass> needed = MaterialsNeeded();
+            List<ThingDefCountClass> needed = TotalMaterialCost();
             float returned = parent.def.resourcesFractionWhenDeconstructed;
             bool satisfied = true;
             for (int i = 0; i < list.Count; i++)
